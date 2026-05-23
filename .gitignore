@@ -1,0 +1,12 @@
+config.json
+output/
+processed/
+input/
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+*.egg-info/
+dist/
+.pytest_cache/

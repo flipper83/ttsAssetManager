@@ -1,0 +1,8 @@
+{
+  "github_token": "YOUR_GITHUB_TOKEN_HERE",
+  "github_owner": "flipper83",
+  "github_repo": "tts-assets",
+  "github_branch": "gh-pages",
+  "tts_saves_path": "~/Library/Tabletop Simulator/Saves",
+  "save_name": "MyGame"
+}
