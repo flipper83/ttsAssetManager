@@ -131,18 +131,6 @@ class SettingsDialog(QDialog):
 
         form.addRow("Saves folder:", saves_row)
 
-        # Show detected paths as hints
-        hints = []
-        for label, path in suggestions:
-            exists = "✓ found" if path.is_dir() else "not found"
-            hints.append(f"{label}: {path}  <i>({exists})</i>")
-        if hints:
-            hint_lbl = QLabel("<br>".join(hints))
-            hint_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")
-            hint_lbl.setTextFormat(Qt.TextFormat.RichText)
-            hint_lbl.setWordWrap(True)
-            form.addRow("", hint_lbl)
-
         self._save_name = QLineEdit()
         self._save_name.setPlaceholderText("MyGame")
         form.addRow("Save name:", self._save_name)

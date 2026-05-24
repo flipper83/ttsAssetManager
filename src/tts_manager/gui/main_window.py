@@ -3,8 +3,9 @@
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QTextCursor
+from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -74,8 +75,44 @@ class MainWindow(QMainWindow):
         self.resize(960, 660)
         self.setStyleSheet(_STYLESHEET)
 
+        self._build_menu_bar()
         self._build_ui()
         self._scan()
+
+    # ------------------------------------------------------------------
+    # Menu bar (native on macOS)
+    # ------------------------------------------------------------------
+
+    def _build_menu_bar(self) -> None:
+        mb = self.menuBar()
+
+        # TTS Manager / File menu — Settings with Cmd+, (standard macOS shortcut)
+        file_menu = mb.addMenu("File")
+        settings_action = QAction("Settings…", self)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        settings_action.triggered.connect(self._open_settings)
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
+        quit_action = QAction("Quit", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.triggered.connect(QApplication.quit)
+        file_menu.addAction(quit_action)
+
+        # Assets menu
+        assets_menu = mb.addMenu("Assets")
+        scan_action = QAction("Scan Input Folder", self)
+        scan_action.setShortcut(QKeySequence("Ctrl+R"))
+        scan_action.triggered.connect(self._scan)
+        assets_menu.addAction(scan_action)
+        assets_menu.addSeparator()
+        upload_action = QAction("Upload All", self)
+        upload_action.setShortcut(QKeySequence("Ctrl+U"))
+        upload_action.triggered.connect(self._on_upload)
+        assets_menu.addAction(upload_action)
+        update_action = QAction("Update Changed", self)
+        update_action.setShortcut(QKeySequence("Ctrl+Shift+U"))
+        update_action.triggered.connect(self._on_update)
+        assets_menu.addAction(update_action)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -99,11 +136,6 @@ class MainWindow(QMainWindow):
         root_layout.addLayout(self._build_action_bar())
 
         self._status = QStatusBar()
-        settings_btn = QPushButton("⚙ Settings")
-        settings_btn.setFixedHeight(22)
-        settings_btn.setStyleSheet("background: transparent; border: none; color: #7f849c; font-size: 12px;")
-        settings_btn.clicked.connect(self._open_settings)
-        self._status.addPermanentWidget(settings_btn)
         self.setStatusBar(self._status)
         self._set_status("Ready", "●")
 
