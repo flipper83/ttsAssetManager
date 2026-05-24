@@ -13,14 +13,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gui = ["PyQt6>=6.6"]
 dev = [
     "pytest>=7.4",
     "pytest-mock>=3.12",
     "ruff>=0.3",
+    "PyQt6>=6.6",
 ]
 
 [project.scripts]
 tts-manager = "tts_manager.cli:main"
+tts-manager-gui = "tts_manager.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
