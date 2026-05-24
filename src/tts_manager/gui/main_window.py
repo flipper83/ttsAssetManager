@@ -25,6 +25,7 @@ from ..classifier import classify_assets
 from ..config import Config
 from ..manager import AssetManager
 from ..progress import EventKind, ProgressEvent
+from .settings_dialog import SettingsDialog
 from .worker import AssetWorker
 
 # Log colours per event kind
@@ -61,9 +62,10 @@ QLabel#section_label { color: #7f849c; font-size: 11px; font-weight: bold; lette
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: Config, project_root: Path) -> None:
+    def __init__(self, config: Config, config_path: Path, project_root: Path) -> None:
         super().__init__()
         self._config = config
+        self._config_path = config_path
         self._root = project_root
         self._worker: AssetWorker | None = None
 
@@ -97,6 +99,11 @@ class MainWindow(QMainWindow):
         root_layout.addLayout(self._build_action_bar())
 
         self._status = QStatusBar()
+        settings_btn = QPushButton("⚙ Settings")
+        settings_btn.setFixedHeight(22)
+        settings_btn.setStyleSheet("background: transparent; border: none; color: #7f849c; font-size: 12px;")
+        settings_btn.clicked.connect(self._open_settings)
+        self._status.addPermanentWidget(settings_btn)
         self.setStatusBar(self._status)
         self._set_status("Ready", "●")
 
@@ -282,6 +289,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(self._config, self._config_path, self)
+        if dlg.exec():
+            self._set_status("Settings saved", "✓", "#4ec94e")
 
     def _browse_input(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select input folder", self._input_edit.text())
