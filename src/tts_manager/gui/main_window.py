@@ -3,8 +3,9 @@
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QTextCursor
+from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -25,6 +26,7 @@ from ..classifier import classify_assets
 from ..config import Config
 from ..manager import AssetManager
 from ..progress import EventKind, ProgressEvent
+from .settings_dialog import SettingsDialog
 from .worker import AssetWorker
 
 # Log colours per event kind
@@ -61,9 +63,10 @@ QLabel#section_label { color: #7f849c; font-size: 11px; font-weight: bold; lette
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: Config, project_root: Path) -> None:
+    def __init__(self, config: Config, config_path: Path, project_root: Path) -> None:
         super().__init__()
         self._config = config
+        self._config_path = config_path
         self._root = project_root
         self._worker: AssetWorker | None = None
 
@@ -72,8 +75,44 @@ class MainWindow(QMainWindow):
         self.resize(960, 660)
         self.setStyleSheet(_STYLESHEET)
 
+        self._build_menu_bar()
         self._build_ui()
         self._scan()
+
+    # ------------------------------------------------------------------
+    # Menu bar (native on macOS)
+    # ------------------------------------------------------------------
+
+    def _build_menu_bar(self) -> None:
+        mb = self.menuBar()
+
+        # TTS Manager / File menu — Settings with Cmd+, (standard macOS shortcut)
+        file_menu = mb.addMenu("File")
+        settings_action = QAction("Settings…", self)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        settings_action.triggered.connect(self._open_settings)
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
+        quit_action = QAction("Quit", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.triggered.connect(QApplication.quit)
+        file_menu.addAction(quit_action)
+
+        # Assets menu
+        assets_menu = mb.addMenu("Assets")
+        scan_action = QAction("Scan Input Folder", self)
+        scan_action.setShortcut(QKeySequence("Ctrl+R"))
+        scan_action.triggered.connect(self._scan)
+        assets_menu.addAction(scan_action)
+        assets_menu.addSeparator()
+        upload_action = QAction("Upload All", self)
+        upload_action.setShortcut(QKeySequence("Ctrl+U"))
+        upload_action.triggered.connect(self._on_upload)
+        assets_menu.addAction(upload_action)
+        update_action = QAction("Update Changed", self)
+        update_action.setShortcut(QKeySequence("Ctrl+Shift+U"))
+        update_action.triggered.connect(self._on_update)
+        assets_menu.addAction(update_action)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -282,6 +321,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(self._config, self._config_path, self)
+        if dlg.exec():
+            self._set_status("Settings saved", "✓", "#4ec94e")
 
     def _browse_input(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select input folder", self._input_edit.text())
