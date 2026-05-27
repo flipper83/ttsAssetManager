@@ -7,7 +7,7 @@ from pathlib import Path
 from .builder import build_card, build_deck, build_save, build_tile, build_token
 from .classifier import classify_assets
 from .composer import compose_deck_sheet, sheet_dims
-from .config import Config
+from .config import Config, GameConfig
 from .progress import EventKind, ProgressCallback, ProgressEvent, noop
 from .state import StateManager
 from .uploader import GitHubUploader
@@ -23,7 +23,7 @@ class AssetManager:
     def __init__(
         self,
         config: Config,
-        input_dir: Path,
+        game: GameConfig,
         skeleton_path: Path,
         output_dir: Path,
         processed_dir: Path,
@@ -31,7 +31,8 @@ class AssetManager:
         on_progress: ProgressCallback = noop,
     ) -> None:
         self._config = config
-        self._input_dir = input_dir
+        self._game = game
+        self._input_dir = game.assets_path()
         self._skeleton_path = skeleton_path
         self._output_dir = output_dir
         self._processed_dir = processed_dir
@@ -76,6 +77,8 @@ class AssetManager:
         tts_objects: list[dict] = []
         deck_key = 1
 
+        prefix = self._game.github_subfolder
+
         def _upload(local: Path, folder: str) -> str:
             if incremental and not state.changed(local):
                 remote = state.remote_path(local)
@@ -84,7 +87,7 @@ class AssetManager:
                 return url
             old_remote = state.remote_path(local)
             versioned = StateManager.versioned_name(local)
-            remote = f"{folder}/{versioned}"
+            remote = f"{prefix}/{folder}/{versioned}"
             url = uploader.upload(local, remote)
             if old_remote and old_remote != remote:
                 uploader.delete(old_remote)
@@ -133,7 +136,7 @@ class AssetManager:
                 sheet_path, cols, rows = compose_deck_sheet(deck, self._processed_dir, self._on_progress)
                 old_remote = state.deck_info(name) and state.deck_info(name).get("remote")  # type: ignore[union-attr]
                 versioned = StateManager.versioned_name(sheet_path)
-                remote = f"decks/{versioned}"
+                remote = f"{prefix}/decks/{versioned}"
                 sheet_url = uploader.upload(sheet_path, remote)
                 if old_remote and old_remote != remote:
                     uploader.delete(old_remote)
@@ -149,7 +152,7 @@ class AssetManager:
             deck_key += 1
 
         save_data = build_save(self._skeleton_path, tts_objects)
-        output_path = self._output_dir / "TTS_Save.json"
+        output_path = self._output_dir / f"{self._game.name}.json"
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(save_data, f, indent=2, ensure_ascii=False)
 
@@ -159,7 +162,7 @@ class AssetManager:
 
         tts_dir = self._config.tts_saves_dir
         if tts_dir and tts_dir.is_dir():
-            dest = tts_dir / f"{self._config.save_name}.json"
+            dest = tts_dir / f"{self._game.name}.json"
             shutil.copy2(output_path, dest)
             self._on_progress(ProgressEvent(EventKind.INFO, f"Copied to TTS: {dest}", {"dest": str(dest)}))
         elif tts_dir:
