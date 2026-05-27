@@ -1,8 +1,30 @@
 import json
 import os
 import platform
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+@dataclass
+class GameConfig:
+    name: str
+    assets_folder: str
+    github_subfolder: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.github_subfolder:
+            self.github_subfolder = _name_to_subfolder(self.name)
+
+    def assets_path(self) -> Path:
+        return Path(os.path.expanduser(self.assets_folder))
+
+
+def _name_to_subfolder(name: str) -> str:
+    slug = name.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_]+", "-", slug)
+    return slug or "game"
 
 
 @dataclass
@@ -12,7 +34,7 @@ class Config:
     github_repo: str
     github_branch: str = "gh-pages"
     tts_saves_path: str | None = None
-    save_name: str = "MyGame"
+    games: list[GameConfig] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> "Config":
@@ -28,13 +50,22 @@ class Config:
         if not token or token == "YOUR_GITHUB_TOKEN_HERE":
             raise ValueError("Set a real github_token in config.json")
 
+        games = [
+            GameConfig(
+                name=g["name"],
+                assets_folder=g["assets_folder"],
+                github_subfolder=g.get("github_subfolder", ""),
+            )
+            for g in data.get("games", [])
+        ]
+
         return cls(
             github_token=token,
             github_owner=data["github_owner"],
             github_repo=data["github_repo"],
             github_branch=data.get("github_branch", "gh-pages"),
             tts_saves_path=data.get("tts_saves_path"),
-            save_name=data.get("save_name", "MyGame"),
+            games=games,
         )
 
     @classmethod
@@ -48,7 +79,14 @@ class Config:
             "github_repo": self.github_repo,
             "github_branch": self.github_branch,
             "tts_saves_path": self.tts_saves_path,
-            "save_name": self.save_name,
+            "games": [
+                {
+                    "name": g.name,
+                    "assets_folder": g.assets_folder,
+                    "github_subfolder": g.github_subfolder,
+                }
+                for g in self.games
+            ],
         }
         with path.open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)

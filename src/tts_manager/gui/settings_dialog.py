@@ -131,10 +131,6 @@ class SettingsDialog(QDialog):
 
         form.addRow("Saves folder:", saves_row)
 
-        self._save_name = QLineEdit()
-        self._save_name.setPlaceholderText("MyGame")
-        form.addRow("Save name:", self._save_name)
-
         return group
 
     def _build_buttons(self) -> QWidget:
@@ -160,7 +156,6 @@ class SettingsDialog(QDialog):
         self._repo.setText(config.github_repo)
         self._branch.setText(config.github_branch)
         self._saves_path.setText(config.tts_saves_path or "")
-        self._save_name.setText(config.save_name)
 
         # Auto-suggest if saves path is empty
         if not config.tts_saves_path:
@@ -181,6 +176,5 @@ class SettingsDialog(QDialog):
         self._config.github_repo = self._repo.text().strip()
         self._config.github_branch = self._branch.text().strip() or "gh-pages"
         self._config.tts_saves_path = self._saves_path.text().strip() or None
-        self._config.save_name = self._save_name.text().strip() or "MyGame"
         self._config.save(self._config_path)
         self.accept()

@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import Config
+from .config import Config, GameConfig
 from .manager import AssetManager
 from .progress import EventKind, ProgressEvent
 
@@ -23,14 +23,15 @@ def _print_progress(event: ProgressEvent) -> None:
     print(f"{prefix}{event.message}")
 
 
-def _make_manager(config: Config, on_progress=_print_progress) -> AssetManager:
+def _make_manager(config: Config, game: GameConfig, on_progress=_print_progress) -> AssetManager:
+    processed_dir = ROOT / "processed" / game.github_subfolder
     return AssetManager(
         config=config,
-        input_dir=ROOT / "input",
+        game=game,
         skeleton_path=ROOT / "skeleton" / "TS_Save_138.json",
         output_dir=ROOT / "output",
-        processed_dir=ROOT / "processed",
-        state_file=ROOT / "processed" / "state.json",
+        processed_dir=processed_dir,
+        state_file=processed_dir / "state.json",
         on_progress=on_progress,
     )
 
@@ -45,6 +46,11 @@ def main() -> None:
         default="config.json",
         help="Path to config file (default: config.json)",
     )
+    parser.add_argument(
+        "--game",
+        default=None,
+        help="Game name to process (default: first game in config)",
+    )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
     sub.add_parser("upload", help="Full upload of all assets (default)")
     sub.add_parser("update", help="Upload only changed or new assets")
@@ -56,7 +62,21 @@ def main() -> None:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    manager = _make_manager(config)
+    if not config.games:
+        print("ERROR: No games configured. Use the GUI to create a game first.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.game:
+        matches = [g for g in config.games if g.name == args.game]
+        if not matches:
+            names = ", ".join(g.name for g in config.games)
+            print(f"ERROR: Game '{args.game}' not found. Available: {names}", file=sys.stderr)
+            sys.exit(1)
+        game = matches[0]
+    else:
+        game = config.games[0]
+
+    manager = _make_manager(config, game)
 
     try:
         if args.command == "update":

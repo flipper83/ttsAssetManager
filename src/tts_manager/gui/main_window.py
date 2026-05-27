@@ -6,10 +6,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PyQt6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -23,13 +23,13 @@ from PyQt6.QtWidgets import (
 )
 
 from ..classifier import classify_assets
-from ..config import Config
+from ..config import Config, GameConfig
 from ..manager import AssetManager
 from ..progress import EventKind, ProgressEvent
+from .new_game_dialog import NewGameDialog
 from .settings_dialog import SettingsDialog
 from .worker import AssetWorker
 
-# Log colours per event kind
 _LOG_COLOURS = {
     EventKind.UPLOAD: "#4ec94e",
     EventKind.SKIP:   "#888888",
@@ -51,7 +51,13 @@ QPushButton#upload_btn:disabled { background: #313244; border-color: #313244; co
 QPushButton#update_btn { background: #40a02b; border-color: #40a02b; color: #ffffff; }
 QPushButton#update_btn:hover { background: #5abf3f; }
 QPushButton#update_btn:disabled { background: #313244; border-color: #313244; color: #585b70; }
+QPushButton#new_game_btn { background: #313244; border: 1px dashed #585b70; border-radius: 6px; padding: 5px 10px; color: #7f849c; font-size: 12px; }
+QPushButton#new_game_btn:hover { background: #45475a; color: #cdd6f4; }
 QLineEdit { background: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 4px 8px; color: #cdd6f4; }
+QListWidget { background: #181825; border: 1px solid #313244; border-radius: 4px; }
+QListWidget::item { padding: 6px 8px; border-radius: 3px; }
+QListWidget::item:selected { background: #313244; color: #89b4fa; }
+QListWidget::item:hover { background: #1e1e2e; }
 QTreeWidget { background: #181825; border: 1px solid #313244; border-radius: 4px; alternate-background-color: #1e1e2e; }
 QTreeWidget::item { padding: 2px 4px; }
 QTreeWidget::item:selected { background: #313244; }
@@ -69,38 +75,42 @@ class MainWindow(QMainWindow):
         self._config_path = config_path
         self._root = project_root
         self._worker: AssetWorker | None = None
+        self._selected_game: GameConfig | None = None
 
         self.setWindowTitle("TTS Asset Manager")
-        self.setMinimumSize(860, 580)
-        self.resize(960, 660)
+        self.setMinimumSize(900, 580)
+        self.resize(1020, 680)
         self.setStyleSheet(_STYLESHEET)
 
         self._build_menu_bar()
         self._build_ui()
-        self._scan()
+        self._populate_game_list()
 
     # ------------------------------------------------------------------
-    # Menu bar (native on macOS)
+    # Menu bar
     # ------------------------------------------------------------------
 
     def _build_menu_bar(self) -> None:
         mb = self.menuBar()
 
-        # TTS Manager / File menu — Settings with Cmd+, (standard macOS shortcut)
         file_menu = mb.addMenu("File")
         settings_action = QAction("Settings…", self)
         settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._open_settings)
         file_menu.addAction(settings_action)
         file_menu.addSeparator()
+        new_game_action = QAction("New Game…", self)
+        new_game_action.setShortcut(QKeySequence("Ctrl+N"))
+        new_game_action.triggered.connect(self._new_game)
+        file_menu.addAction(new_game_action)
+        file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.triggered.connect(QApplication.quit)
         file_menu.addAction(quit_action)
 
-        # Assets menu
         assets_menu = mb.addMenu("Assets")
-        scan_action = QAction("Scan Input Folder", self)
+        scan_action = QAction("Scan Assets", self)
         scan_action.setShortcut(QKeySequence("Ctrl+R"))
         scan_action.triggered.connect(self._scan)
         assets_menu.addAction(scan_action)
@@ -125,57 +135,49 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(12, 12, 12, 8)
         root_layout.setSpacing(8)
 
-        root_layout.addLayout(self._build_input_bar())
-
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_asset_panel())
+        splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_log_panel())
-        splitter.setSizes([280, 620])
+        splitter.setSizes([300, 680])
         root_layout.addWidget(splitter, stretch=1)
 
         root_layout.addLayout(self._build_action_bar())
 
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._set_status("Ready", "●")
+        self._set_status("Select or create a game", "●")
 
-    def _build_input_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setSpacing(6)
-
-        lbl = QLabel("Input folder:")
-        lbl.setFixedWidth(90)
-        layout.addWidget(lbl)
-
-        self._input_edit = QLineEdit(str(self._root / "input"))
-        layout.addWidget(self._input_edit, stretch=1)
-
-        browse_btn = QPushButton("Browse")
-        browse_btn.setFixedWidth(80)
-        browse_btn.clicked.connect(self._browse_input)
-        layout.addWidget(browse_btn)
-
-        scan_btn = QPushButton("Scan")
-        scan_btn.setFixedWidth(70)
-        scan_btn.clicked.connect(self._scan)
-        layout.addWidget(scan_btn)
-
-        return layout
-
-    def _build_asset_panel(self) -> QWidget:
+    def _build_left_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 4, 0)
         layout.setSpacing(4)
 
-        lbl = QLabel("ASSETS")
-        lbl.setObjectName("section_label")
-        layout.addWidget(lbl)
+        # Games section
+        games_lbl = QLabel("GAMES")
+        games_lbl.setObjectName("section_label")
+        layout.addWidget(games_lbl)
+
+        self._game_list = QListWidget()
+        self._game_list.setMaximumHeight(130)
+        self._game_list.currentRowChanged.connect(self._on_game_selected)
+        layout.addWidget(self._game_list)
+
+        new_game_btn = QPushButton("+ New Game")
+        new_game_btn.setObjectName("new_game_btn")
+        new_game_btn.setFixedHeight(28)
+        new_game_btn.clicked.connect(self._new_game)
+        layout.addWidget(new_game_btn)
+
+        # Assets section
+        assets_lbl = QLabel("ASSETS")
+        assets_lbl.setObjectName("section_label")
+        layout.addWidget(assets_lbl)
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setAlternatingRowColors(True)
-        layout.addWidget(self._tree)
+        layout.addWidget(self._tree, stretch=1)
 
         return panel
 
@@ -202,12 +204,14 @@ class MainWindow(QMainWindow):
         self._upload_btn = QPushButton("Upload All")
         self._upload_btn.setObjectName("upload_btn")
         self._upload_btn.setFixedHeight(34)
+        self._upload_btn.setEnabled(False)
         self._upload_btn.clicked.connect(self._on_upload)
         layout.addWidget(self._upload_btn)
 
         self._update_btn = QPushButton("Update")
         self._update_btn.setObjectName("update_btn")
         self._update_btn.setFixedHeight(34)
+        self._update_btn.setEnabled(False)
         self._update_btn.clicked.connect(self._on_update)
         layout.addWidget(self._update_btn)
 
@@ -220,13 +224,54 @@ class MainWindow(QMainWindow):
         return layout
 
     # ------------------------------------------------------------------
+    # Game list
+    # ------------------------------------------------------------------
+
+    def _populate_game_list(self) -> None:
+        self._game_list.blockSignals(True)
+        self._game_list.clear()
+        for game in self._config.games:
+            item = QListWidgetItem(game.name)
+            item.setData(Qt.ItemDataRole.UserRole, game)
+            self._game_list.addItem(item)
+        self._game_list.blockSignals(False)
+
+        if self._config.games:
+            self._game_list.setCurrentRow(0)
+
+    def _on_game_selected(self, row: int) -> None:
+        if row < 0 or row >= len(self._config.games):
+            self._selected_game = None
+            self._upload_btn.setEnabled(False)
+            self._update_btn.setEnabled(False)
+            return
+        self._selected_game = self._config.games[row]
+        self._scan()
+
+    def _new_game(self) -> None:
+        dlg = NewGameDialog(self)
+        if dlg.exec():
+            game = dlg.game_config()
+            self._config.games.append(game)
+            self._config.save(self._config_path)
+            self._populate_game_list()
+            # Select the newly created game
+            self._game_list.setCurrentRow(len(self._config.games) - 1)
+            self._log_line(f"Game '{game.name}' created", "#89b4fa")
+
+    # ------------------------------------------------------------------
     # Asset tree
     # ------------------------------------------------------------------
 
     def _scan(self) -> None:
-        input_dir = Path(self._input_edit.text())
+        self._tree.clear()
+        game = self._selected_game
+        if not game:
+            return
+
+        input_dir = game.assets_path()
         if not input_dir.is_dir():
-            self._set_status("Input folder not found", "⚠", "#e0c030")
+            self._set_status(f"Assets folder not found: {input_dir}", "⚠", "#e0c030")
             return
 
         warnings: list[str] = []
@@ -235,7 +280,6 @@ class MainWindow(QMainWindow):
             on_progress=lambda e: warnings.append(e.message) if e.kind == EventKind.WARNING else None,
         )
 
-        self._tree.clear()
         categories = [
             ("Decks",  collection.decks,  lambda d: [c.card_name for c in d.cards]),
             ("Cards",  collection.cards,  lambda c: ["front" + (" + back" if c.back_path else "")]),
@@ -259,7 +303,7 @@ class MainWindow(QMainWindow):
             cat_item.setExpanded(True)
             total += len(assets)
 
-        status = f"Scanned: {total} assets"
+        status = f"{game.name} — {total} assets"
         if warnings:
             status += f"  ⚠ {len(warnings)} warning(s)"
         self._set_status(status, "●")
@@ -277,13 +321,18 @@ class MainWindow(QMainWindow):
         self._run(incremental=True)
 
     def _run(self, incremental: bool) -> None:
+        game = self._selected_game
+        if not game:
+            return
+
+        processed_dir = self._root / "processed" / game.github_subfolder
         manager = AssetManager(
             config=self._config,
-            input_dir=Path(self._input_edit.text()),
+            game=game,
             skeleton_path=self._root / "skeleton" / "TS_Save_138.json",
             output_dir=self._root / "output",
-            processed_dir=self._root / "processed",
-            state_file=self._root / "processed" / "state.json",
+            processed_dir=processed_dir,
+            state_file=processed_dir / "state.json",
         )
 
         self._worker = AssetWorker(manager, incremental=incremental)
@@ -295,7 +344,7 @@ class MainWindow(QMainWindow):
         self._update_btn.setEnabled(False)
         label = "Updating..." if incremental else "Uploading..."
         self._set_status(label, "⟳", "#6ab0e0")
-        self._log_line(f"{'Update' if incremental else 'Upload'} started", "#89b4fa")
+        self._log_line(f"{'Update' if incremental else 'Upload'} — {game.name}", "#89b4fa")
 
     # ------------------------------------------------------------------
     # Progress & completion
@@ -326,12 +375,6 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self._config, self._config_path, self)
         if dlg.exec():
             self._set_status("Settings saved", "✓", "#4ec94e")
-
-    def _browse_input(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Select input folder", self._input_edit.text())
-        if path:
-            self._input_edit.setText(path)
-            self._scan()
 
     def _log_line(self, text: str, colour: str = "#cccccc") -> None:
         self._log.moveCursor(QTextCursor.MoveOperation.End)
