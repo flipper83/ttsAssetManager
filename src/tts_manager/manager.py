@@ -82,6 +82,32 @@ class AssetManager:
 
         return output_path
 
+    def delete_game(self, delete_remote: bool) -> None:
+        """Remove local processed files and optionally all remote assets."""
+        if delete_remote:
+            uploader = GitHubUploader(self._config, self._on_progress)
+            paths = (
+                uploader.list_remote_paths(f"{self._game.github_subfolder}/")
+                + uploader.list_remote_paths(f"saves/{self._game.github_subfolder}")
+            )
+            if paths:
+                uploader.delete_many(paths)
+            else:
+                self._on_progress(ProgressEvent(EventKind.INFO, "No remote files found"))
+
+        if self._processed_dir.exists():
+            shutil.rmtree(self._processed_dir)
+        output_path = self._output_dir / f"{self._game.name}.json"
+        if output_path.exists():
+            output_path.unlink()
+        tts_dir = self._config.tts_saves_dir
+        if tts_dir:
+            tts_save = tts_dir / f"{self._game.name}.json"
+            if tts_save.exists():
+                tts_save.unlink()
+                self._on_progress(ProgressEvent(EventKind.DELETE, f"Deleted TTS save: {tts_save}"))
+        self._on_progress(ProgressEvent(EventKind.INFO, "Local files cleaned up"))
+
     @staticmethod
     def remote_save_hash(config: Config, game: GameConfig) -> str | None:
         """Fetch the remote save_hash without full uploader initialization."""

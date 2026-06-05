@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -28,6 +29,7 @@ from ..manager import AssetManager
 from ..models import DeckAsset, CardAsset, TileAsset, TokenAsset
 from ..progress import EventKind, ProgressEvent
 from ..state import StateManager
+from .delete_game_dialog import DeleteGameDialog
 from .join_game_dialog import JoinGameDialog
 from .new_game_dialog import NewGameDialog
 from .settings_dialog import SettingsDialog
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         self._root = project_root
         self._worker: AssetWorker | None = None
         self._selected_game: GameConfig | None = None
+        self._pending_delete: GameConfig | None = None
 
         self.setWindowTitle("TTS Asset Manager")
         self.setMinimumSize(900, 580)
@@ -116,6 +119,9 @@ class MainWindow(QMainWindow):
         join_game_action.setShortcut(QKeySequence("Ctrl+J"))
         join_game_action.triggered.connect(self._join_game)
         file_menu.addAction(join_game_action)
+        delete_game_action = QAction("Delete Game…", self)
+        delete_game_action.triggered.connect(self._delete_game)
+        file_menu.addAction(delete_game_action)
         file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -174,6 +180,8 @@ class MainWindow(QMainWindow):
         self._game_list = QListWidget()
         self._game_list.setMaximumHeight(130)
         self._game_list.currentRowChanged.connect(self._on_game_selected)
+        self._game_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._game_list.customContextMenuRequested.connect(self._game_list_context_menu)
         layout.addWidget(self._game_list)
 
         game_btns = QHBoxLayout()
@@ -297,6 +305,60 @@ class MainWindow(QMainWindow):
             self._game_list.setCurrentRow(len(self._config.games) - 1)
             self._log_line(f"Joined '{game.name}' — pulling save…", "#04a5e5")
             self._on_pull()
+
+    def _game_list_context_menu(self, pos) -> None:
+        if not self._selected_game:
+            return
+        menu = QMenu(self)
+        delete_action = menu.addAction("Delete Game…")
+        delete_action.triggered.connect(self._delete_game)
+        menu.exec(self._game_list.mapToGlobal(pos))
+
+    def _delete_game(self) -> None:
+        game = self._selected_game
+        if not game:
+            return
+        dlg = DeleteGameDialog(game.name, self)
+        if not dlg.exec():
+            return
+
+        delete_remote = dlg.delete_remote()
+        self._pending_delete = game
+        processed_dir = self._root / "processed" / game.github_subfolder
+        manager = AssetManager(
+            config=self._config,
+            game=game,
+            skeleton_path=self._root / "skeleton" / "TS_Save_138.json",
+            output_dir=self._root / "output",
+            processed_dir=processed_dir,
+            state_file=processed_dir / "state.json",
+        )
+        self._worker = AssetWorker(manager, delete_game=delete_remote)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_delete_finished)
+        self._worker.start()
+
+        self._upload_btn.setEnabled(False)
+        self._update_btn.setEnabled(False)
+        self._pull_btn.setEnabled(False)
+        label = "Deleting remote assets…" if delete_remote else "Cleaning up…"
+        self._set_status(label, "⟳", "#f38ba8")
+        self._log_line(f"Deleting '{game.name}'…", "#f38ba8")
+
+    def _on_delete_finished(self, success: bool, message: str) -> None:
+        game = self._pending_delete
+        self._pending_delete = None
+        if success and game:
+            self._config.games.remove(game)
+            self._config.save(self._config_path)
+            self._populate_game_list()
+            self._tree.clear()
+            self._log_line(f"✓ '{game.name}' deleted", "#f38ba8")
+            self._set_status("Select or create a game", "●")
+        else:
+            self._log_line(f"✗ {message}", "#f38ba8")
+            self._set_status("Error — see log", "✗", "#f38ba8")
+            QMessageBox.critical(self, "Error", message)
 
     # ------------------------------------------------------------------
     # Asset tree
