@@ -1,4 +1,5 @@
 import base64
+import json
 from pathlib import Path
 
 import requests
@@ -159,13 +160,8 @@ class GitHubUploader:
             json={"sha": commit_sha},
         ).raise_for_status()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def upload(self, local_path: Path, remote_path: str) -> str:
-        """Upload a file and return its GitHub Pages URL."""
-        blob_sha = self._create_blob(local_path.read_bytes())
+    def _commit_blob(self, content: bytes, remote_path: str) -> str:
+        blob_sha = self._create_blob(content)
         head = self._head_sha()
         new_tree = self._create_tree(self._tree_sha(head), [{
             "path": remote_path,
@@ -174,9 +170,65 @@ class GitHubUploader:
             "sha": blob_sha,
         }])
         self._update_ref(self._create_commit(f"Upload {remote_path}", new_tree, head))
-        url = f"{self._config.base_url}/{remote_path}"
+        return f"{self._config.base_url}/{remote_path}"
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def upload(self, local_path: Path, remote_path: str) -> str:
+        """Upload a file and return its GitHub Pages URL."""
+        url = self._commit_blob(local_path.read_bytes(), remote_path)
         self._on_progress(ProgressEvent(EventKind.UPLOAD, f"→ {url}", {"url": url, "path": remote_path}))
         return url
+
+    def upload_json(self, data: dict, remote_path: str) -> None:
+        """Upload a dict as JSON (no progress event — internal bookkeeping file)."""
+        self._commit_blob(json.dumps(data, indent=2, ensure_ascii=False).encode(), remote_path)
+
+    def fetch_json(self, remote_path: str) -> dict | None:
+        """Download and parse a JSON file from the branch. Returns None if not found."""
+        r = requests.get(
+            f"{self._base_url}/contents/{remote_path}",
+            headers=self._headers,
+            params={"ref": self._config.github_branch},
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return json.loads(base64.b64decode(r.json()["content"]))
+
+    def fetch_bytes(self, remote_path: str) -> bytes | None:
+        """Download raw bytes of a file from the branch. Returns None if not found."""
+        r = requests.get(
+            f"{self._base_url}/contents/{remote_path}",
+            headers=self._headers,
+            params={"ref": self._config.github_branch},
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return base64.b64decode(r.json()["content"])
+
+    @classmethod
+    def fetch_remote_state(cls, config, remote_path: str) -> dict | None:
+        """Fetch and parse a JSON file without full uploader initialization."""
+        r = requests.get(
+            f"https://api.github.com/repos/{config.github_owner}/{config.github_repo}/contents/{remote_path}",
+            headers={
+                "Authorization": f"Bearer {config.github_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            params={"ref": config.github_branch},
+            timeout=5,
+        )
+        if r.status_code != 200:
+            return None
+        try:
+            return json.loads(base64.b64decode(r.json()["content"]))
+        except Exception:
+            return None
 
     def delete(self, remote_path: str) -> None:
         """Delete a file from the repo (no-op if not found)."""

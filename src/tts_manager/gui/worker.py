@@ -10,15 +10,18 @@ class AssetWorker(QThread):
     progress = pyqtSignal(object)   # emits ProgressEvent
     finished = pyqtSignal(bool, str)  # (success, message)
 
-    def __init__(self, manager: AssetManager, incremental: bool) -> None:
+    def __init__(self, manager: AssetManager, incremental: bool = False, pull: bool = False) -> None:
         super().__init__()
         self._manager = manager
         self._incremental = incremental
+        self._pull = pull
 
     def run(self) -> None:
         self._manager._on_progress = lambda e: self.progress.emit(e)
         try:
-            if self._incremental:
+            if self._pull:
+                self._manager.pull()
+            elif self._incremental:
                 self._manager.update()
             else:
                 self._manager.upload()

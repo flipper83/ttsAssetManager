@@ -30,7 +30,7 @@ class AssetManager:
         state_file: Path,
         on_progress: ProgressCallback = noop,
     ) -> None:
-        self._config = config
+        self._config = game.resolved_config(config)
         self._game = game
         self._input_dir = game.assets_path()
         self._skeleton_path = skeleton_path
@@ -46,6 +46,49 @@ class AssetManager:
     def update(self) -> Path:
         """Incremental upload — only changed or new assets."""
         return self._run(incremental=True)
+
+    def pull(self) -> Path:
+        """Download the latest TTS save from remote and sync state."""
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._processed_dir.mkdir(parents=True, exist_ok=True)
+
+        uploader = GitHubUploader(self._config, self._on_progress)
+
+        save_remote = f"saves/{self._game.github_subfolder}.json"
+        save_bytes = uploader.fetch_bytes(save_remote)
+        if save_bytes is None:
+            raise RuntimeError(f"No remote save found at {save_remote}. Upload first.")
+
+        output_path = self._output_dir / f"{self._game.name}.json"
+        output_path.write_bytes(save_bytes)
+        self._on_progress(ProgressEvent(EventKind.INFO, f"Save downloaded: {output_path}"))
+
+        tts_dir = self._config.tts_saves_dir
+        if tts_dir and tts_dir.is_dir():
+            dest = tts_dir / f"{self._game.name}.json"
+            shutil.copy2(output_path, dest)
+            self._on_progress(ProgressEvent(EventKind.INFO, f"Copied to TTS: {dest}", {"dest": str(dest)}))
+        elif tts_dir:
+            self._on_progress(ProgressEvent(EventKind.WARNING, f"TTS saves folder not found: {tts_dir}"))
+
+        state = StateManager(self._state_file)
+        remote_state = uploader.fetch_json(f"saves/{self._game.github_subfolder}.state.json")
+        if remote_state:
+            state.merge_remote(remote_state, self._input_dir)
+            state.set_uploaded_save_hash(remote_state.get("save_hash"))
+            state.mark_file(output_path, save_remote)
+            state.save()
+            self._on_progress(ProgressEvent(EventKind.INFO, "State synced from remote"))
+
+        return output_path
+
+    @staticmethod
+    def remote_save_hash(config: Config, game: GameConfig) -> str | None:
+        """Fetch the remote save_hash without full uploader initialization."""
+        data = GitHubUploader.fetch_remote_state(
+            game.resolved_config(config), f"saves/{game.github_subfolder}.state.json"
+        )
+        return data.get("save_hash") if data else None
 
     # ------------------------------------------------------------------
     # Internal
@@ -162,10 +205,12 @@ class AssetManager:
         if state.changed(output_path):
             save_url = uploader.upload(output_path, save_remote)
             state.mark_file(output_path, save_remote)
+            state.set_uploaded_save_hash(StateManager._hash(output_path))
             self._on_progress(ProgressEvent(EventKind.INFO, f"Save synced → {save_url}", {"url": save_url}))
         else:
             self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {save_remote}"))
 
+        uploader.upload_json(state.export_remote(self._input_dir), f"saves/{self._game.github_subfolder}.state.json")
         state.save()
 
         tts_dir = self._config.tts_saves_dir

@@ -2,7 +2,7 @@ import json
 import os
 import platform
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dc_replace
 from pathlib import Path
 
 
@@ -11,6 +11,9 @@ class GameConfig:
     name: str
     assets_folder: str
     github_subfolder: str = ""
+    github_owner: str = ""   # overrides global if set
+    github_repo: str = ""
+    github_branch: str = ""
 
     def __post_init__(self) -> None:
         if not self.github_subfolder:
@@ -18,6 +21,15 @@ class GameConfig:
 
     def assets_path(self) -> Path:
         return Path(os.path.expanduser(self.assets_folder))
+
+    def resolved_config(self, global_config: "Config") -> "Config":
+        """Return a Config where this game's owner/repo/branch override the globals."""
+        return dc_replace(
+            global_config,
+            github_owner=self.github_owner or global_config.github_owner,
+            github_repo=self.github_repo or global_config.github_repo,
+            github_branch=self.github_branch or global_config.github_branch,
+        )
 
 
 def _name_to_subfolder(name: str) -> str:
@@ -55,6 +67,9 @@ class Config:
                 name=g["name"],
                 assets_folder=g["assets_folder"],
                 github_subfolder=g.get("github_subfolder", ""),
+                github_owner=g.get("github_owner", ""),
+                github_repo=g.get("github_repo", ""),
+                github_branch=g.get("github_branch", ""),
             )
             for g in data.get("games", [])
         ]
@@ -84,6 +99,9 @@ class Config:
                     "name": g.name,
                     "assets_folder": g.assets_folder,
                     "github_subfolder": g.github_subfolder,
+                    **({"github_owner": g.github_owner} if g.github_owner else {}),
+                    **({"github_repo": g.github_repo} if g.github_repo else {}),
+                    **({"github_branch": g.github_branch} if g.github_branch else {}),
                 }
                 for g in self.games
             ],
