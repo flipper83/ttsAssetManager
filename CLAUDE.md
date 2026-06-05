@@ -1,5 +1,10 @@
 # TTS Asset Manager — Project Guide
 
+## Conventions
+
+- All code, comments, docstrings, PR titles, descriptions, commit messages, and documentation must be written in English.
+- Before opening a PR, check that README.md is aligned with any new features or workflow changes.
+
 ## What this project does
 
 Prepares Tabletop Simulator save files from local image assets without opening TTS.
