@@ -25,10 +25,15 @@ from PyQt6.QtWidgets import (
 from ..classifier import classify_assets
 from ..config import Config, GameConfig
 from ..manager import AssetManager
+from ..models import DeckAsset, CardAsset, TileAsset, TokenAsset
 from ..progress import EventKind, ProgressEvent
+from ..state import StateManager
 from .new_game_dialog import NewGameDialog
 from .settings_dialog import SettingsDialog
 from .worker import AssetWorker
+
+_STATUS_ICON  = {"new": "+", "modified": "↑", "ok": "✓"}
+_STATUS_COLOR = {"new": "#a6e3a1", "modified": "#fab387", "ok": "#585b70"}
 
 _LOG_COLOURS = {
     EventKind.UPLOAD: "#4ec94e",
@@ -263,6 +268,26 @@ class MainWindow(QMainWindow):
     # Asset tree
     # ------------------------------------------------------------------
 
+    def _load_state(self, game: GameConfig) -> StateManager:
+        processed_dir = self._root / "processed" / game.github_subfolder
+        return StateManager(processed_dir / "state.json")
+
+    def _paths_status(self, paths: list, state: StateManager) -> str:
+        if all(state.remote_path(p) is None for p in paths):
+            return "new"
+        if any(state.changed(p) for p in paths):
+            return "modified"
+        return "ok"
+
+    def _asset_paths(self, asset) -> list:
+        if isinstance(asset, DeckAsset):
+            return [c.path for c in asset.cards] + ([asset.back_path] if asset.back_path else [])
+        if isinstance(asset, (CardAsset, TileAsset)):
+            return [asset.front_path] + ([asset.back_path] if asset.back_path else [])
+        if isinstance(asset, TokenAsset):
+            return [asset.front_path]
+        return []
+
     def _scan(self) -> None:
         self._tree.clear()
         game = self._selected_game
@@ -279,6 +304,7 @@ class MainWindow(QMainWindow):
             input_dir,
             on_progress=lambda e: warnings.append(e.message) if e.kind == EventKind.WARNING else None,
         )
+        state = self._load_state(game)
 
         categories = [
             ("Decks",  collection.decks,  lambda d: [c.card_name for c in d.cards]),
@@ -291,13 +317,23 @@ class MainWindow(QMainWindow):
         for cat_name, assets, children_fn in categories:
             if not assets:
                 continue
-            cat_item = QTreeWidgetItem(self._tree, [f"{cat_name}  ({len(assets)})"])
+
+            statuses = {name: self._paths_status(self._asset_paths(asset), state)
+                        for name, asset in assets.items()}
+            new_count = sum(1 for s in statuses.values() if s == "new")
+            mod_count = sum(1 for s in statuses.values() if s == "modified")
+            summary = (f"  +{new_count}" if new_count else "") + (f"  ↑{mod_count}" if mod_count else "")
+
+            cat_item = QTreeWidgetItem(self._tree, [f"{cat_name}  ({len(assets)}){summary}"])
             font = QFont()
             font.setBold(True)
             cat_item.setFont(0, font)
             cat_item.setForeground(0, QColor("#89b4fa"))
+
             for name, asset in sorted(assets.items()):
-                asset_item = QTreeWidgetItem(cat_item, [name])
+                status = statuses[name]
+                asset_item = QTreeWidgetItem(cat_item, [f"{_STATUS_ICON[status]}  {name}"])
+                asset_item.setForeground(0, QColor(_STATUS_COLOR[status]))
                 for child_label in children_fn(asset):
                     QTreeWidgetItem(asset_item, [f"  {child_label}"]).setForeground(0, QColor("#7f849c"))
             cat_item.setExpanded(True)
