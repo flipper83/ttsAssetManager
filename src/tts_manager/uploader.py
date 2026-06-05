@@ -230,6 +230,31 @@ class GitHubUploader:
         except Exception:
             return None
 
+    def list_remote_paths(self, prefix: str) -> list[str]:
+        """Return all blob paths in the branch that start with prefix."""
+        head = self._head_sha()
+        r = requests.get(
+            f"{self._base_url}/git/trees/{head}",
+            headers=self._headers,
+            params={"recursive": "1"},
+        )
+        r.raise_for_status()
+        return [
+            item["path"] for item in r.json().get("tree", [])
+            if item["type"] == "blob" and item["path"].startswith(prefix)
+        ]
+
+    def delete_many(self, paths: list[str]) -> None:
+        """Delete multiple files in a single commit."""
+        if not paths:
+            return
+        head = self._head_sha()
+        entries = [{"path": p, "mode": "100644", "type": "blob", "sha": None} for p in paths]
+        new_tree = self._create_tree(self._tree_sha(head), entries)
+        self._update_ref(self._create_commit(f"Delete {len(paths)} game files", new_tree, head))
+        for p in paths:
+            self._on_progress(ProgressEvent(EventKind.DELETE, f"Deleted: {p}"))
+
     def delete(self, remote_path: str) -> None:
         """Delete a file from the repo (no-op if not found)."""
         r = requests.get(
