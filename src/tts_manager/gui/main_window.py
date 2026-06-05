@@ -28,6 +28,7 @@ from ..manager import AssetManager
 from ..models import DeckAsset, CardAsset, TileAsset, TokenAsset
 from ..progress import EventKind, ProgressEvent
 from ..state import StateManager
+from .join_game_dialog import JoinGameDialog
 from .new_game_dialog import NewGameDialog
 from .settings_dialog import SettingsDialog
 from .worker import AssetWorker
@@ -111,6 +112,10 @@ class MainWindow(QMainWindow):
         new_game_action.setShortcut(QKeySequence("Ctrl+N"))
         new_game_action.triggered.connect(self._new_game)
         file_menu.addAction(new_game_action)
+        join_game_action = QAction("Join Game…", self)
+        join_game_action.setShortcut(QKeySequence("Ctrl+J"))
+        join_game_action.triggered.connect(self._join_game)
+        file_menu.addAction(join_game_action)
         file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -171,11 +176,19 @@ class MainWindow(QMainWindow):
         self._game_list.currentRowChanged.connect(self._on_game_selected)
         layout.addWidget(self._game_list)
 
+        game_btns = QHBoxLayout()
+        game_btns.setSpacing(4)
         new_game_btn = QPushButton("+ New Game")
         new_game_btn.setObjectName("new_game_btn")
         new_game_btn.setFixedHeight(28)
         new_game_btn.clicked.connect(self._new_game)
-        layout.addWidget(new_game_btn)
+        game_btns.addWidget(new_game_btn)
+        join_game_btn = QPushButton("↓ Join Game")
+        join_game_btn.setObjectName("new_game_btn")
+        join_game_btn.setFixedHeight(28)
+        join_game_btn.clicked.connect(self._join_game)
+        game_btns.addWidget(join_game_btn)
+        layout.addLayout(game_btns)
 
         # Assets section
         assets_lbl = QLabel("ASSETS")
@@ -271,9 +284,19 @@ class MainWindow(QMainWindow):
             self._config.games.append(game)
             self._config.save(self._config_path)
             self._populate_game_list()
-            # Select the newly created game
             self._game_list.setCurrentRow(len(self._config.games) - 1)
             self._log_line(f"Game '{game.name}' created", "#89b4fa")
+
+    def _join_game(self) -> None:
+        dlg = JoinGameDialog(self)
+        if dlg.exec():
+            game = dlg.game_config()
+            self._config.games.append(game)
+            self._config.save(self._config_path)
+            self._populate_game_list()
+            self._game_list.setCurrentRow(len(self._config.games) - 1)
+            self._log_line(f"Joined '{game.name}' — pulling save…", "#04a5e5")
+            self._on_pull()
 
     # ------------------------------------------------------------------
     # Asset tree

@@ -45,7 +45,6 @@ class NewGameDialog(QDialog):
         self._folder.setPlaceholderText("/path/to/assets folder")
         folder_row.addWidget(self._folder)
         browse_btn = QPushButton("Browse…")
-        browse_btn.setMinimumWidth(90)
         browse_btn.clicked.connect(self._browse_folder)
         folder_row.addWidget(browse_btn)
         form.addRow("Assets folder:", folder_row)
