@@ -339,6 +339,20 @@ class MainWindow(QMainWindow):
             cat_item.setExpanded(True)
             total += len(assets)
 
+        save_path = self._root / "output" / f"{game.name}.json"
+        if save_path.exists():
+            save_status = self._paths_status([save_path], state)
+        else:
+            save_status = "new"
+        save_item = QTreeWidgetItem(self._tree, ["SAVE"])
+        font = QFont()
+        font.setBold(True)
+        save_item.setFont(0, font)
+        save_item.setForeground(0, QColor("#89b4fa"))
+        child = QTreeWidgetItem(save_item, [f"{_STATUS_ICON[save_status]}  {game.name}.json"])
+        child.setForeground(0, QColor(_STATUS_COLOR[save_status]))
+        save_item.setExpanded(True)
+
         status = f"{game.name} — {total} assets"
         if warnings:
             status += f"  ⚠ {len(warnings)} warning(s)"
