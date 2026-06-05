@@ -51,6 +51,7 @@ class GitHubUploader:
 
     def _ensure_branch(self) -> None:
         if self._branch_sha(self._config.github_branch):
+            self._ensure_nojekyll()
             return
         source_sha = next(
             (
@@ -68,6 +69,49 @@ class GitHubUploader:
             json={"ref": f"refs/heads/{self._config.github_branch}", "sha": source_sha},
         ).raise_for_status()
         self._on_progress(ProgressEvent(EventKind.INFO, f"Created branch '{self._config.github_branch}'"))
+        self._ensure_nojekyll()
+        self._enable_pages()
+
+    def _ensure_nojekyll(self) -> None:
+        """Add .nojekyll to the gh-pages branch if missing (prevents Jekyll from filtering assets)."""
+        r = requests.get(
+            f"{self._base_url}/contents/.nojekyll",
+            headers=self._headers,
+            params={"ref": self._config.github_branch},
+        )
+        if r.status_code == 200:
+            return
+        blob_sha = requests.post(
+            f"{self._base_url}/git/blobs",
+            headers=self._headers,
+            json={"content": "", "encoding": "utf-8"},
+        ).json()["sha"]
+        head = self._head_sha()
+        new_tree = self._create_tree(self._tree_sha(head), [{
+            "path": ".nojekyll",
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob_sha,
+        }])
+        self._update_ref(self._create_commit("Add .nojekyll to disable Jekyll", new_tree, head))
+        self._on_progress(ProgressEvent(EventKind.INFO, "Added .nojekyll to gh-pages branch"))
+
+    def _enable_pages(self) -> None:
+        """Enable GitHub Pages via API (best-effort; requires pages write permission)."""
+        r = requests.post(
+            f"{self._base_url}/pages",
+            headers=self._headers,
+            json={"source": {"branch": self._config.github_branch, "path": "/"}},
+        )
+        if r.status_code in (201, 409):
+            self._on_progress(ProgressEvent(EventKind.INFO, f"GitHub Pages enabled → {self._config.base_url}"))
+        else:
+            self._on_progress(ProgressEvent(
+                EventKind.WARNING,
+                f"Enable GitHub Pages manually at "
+                f"https://github.com/{self._config.github_owner}/{self._config.github_repo}/settings/pages "
+                f"(Source: {self._config.github_branch} branch, root)",
+            ))
 
     # ------------------------------------------------------------------
     # Git Data API
