@@ -56,6 +56,9 @@ QPushButton#upload_btn:disabled { background: #313244; border-color: #313244; co
 QPushButton#update_btn { background: #40a02b; border-color: #40a02b; color: #ffffff; }
 QPushButton#update_btn:hover { background: #5abf3f; }
 QPushButton#update_btn:disabled { background: #313244; border-color: #313244; color: #585b70; }
+QPushButton#pull_btn { background: #04a5e5; border-color: #04a5e5; color: #ffffff; }
+QPushButton#pull_btn:hover { background: #22c0f7; }
+QPushButton#pull_btn:disabled { background: #313244; border-color: #313244; color: #585b70; }
 QPushButton#new_game_btn { background: #313244; border: 1px dashed #585b70; border-radius: 6px; padding: 5px 10px; color: #7f849c; font-size: 12px; }
 QPushButton#new_game_btn:hover { background: #45475a; color: #cdd6f4; }
 QLineEdit { background: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 4px 8px; color: #cdd6f4; }
@@ -220,6 +223,13 @@ class MainWindow(QMainWindow):
         self._update_btn.clicked.connect(self._on_update)
         layout.addWidget(self._update_btn)
 
+        self._pull_btn = QPushButton("Pull")
+        self._pull_btn.setObjectName("pull_btn")
+        self._pull_btn.setFixedHeight(34)
+        self._pull_btn.setEnabled(False)
+        self._pull_btn.clicked.connect(self._on_pull)
+        layout.addWidget(self._pull_btn)
+
         layout.addStretch()
 
         clear_btn = QPushButton("Clear log")
@@ -249,6 +259,7 @@ class MainWindow(QMainWindow):
             self._selected_game = None
             self._upload_btn.setEnabled(False)
             self._update_btn.setEnabled(False)
+            self._pull_btn.setEnabled(False)
             return
         self._selected_game = self._config.games[row]
         self._scan()
@@ -359,6 +370,7 @@ class MainWindow(QMainWindow):
         self._set_status(status, "●")
         self._upload_btn.setEnabled(True)
         self._update_btn.setEnabled(True)
+        self._pull_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Actions
@@ -370,12 +382,55 @@ class MainWindow(QMainWindow):
     def _on_update(self) -> None:
         self._run(incremental=True)
 
+    def _on_pull(self) -> None:
+        game = self._selected_game
+        if not game:
+            return
+        processed_dir = self._root / "processed" / game.github_subfolder
+        manager = AssetManager(
+            config=self._config,
+            game=game,
+            skeleton_path=self._root / "skeleton" / "TS_Save_138.json",
+            output_dir=self._root / "output",
+            processed_dir=processed_dir,
+            state_file=processed_dir / "state.json",
+        )
+        self._worker = AssetWorker(manager, pull=True)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.start()
+        self._upload_btn.setEnabled(False)
+        self._update_btn.setEnabled(False)
+        self._pull_btn.setEnabled(False)
+        self._set_status("Pulling...", "⟳", "#04a5e5")
+        self._log_line(f"Pull — {game.name}", "#04a5e5")
+
     def _run(self, incremental: bool) -> None:
         game = self._selected_game
         if not game:
             return
 
+        # Conflict check: warn if someone else uploaded since our last sync
         processed_dir = self._root / "processed" / game.github_subfolder
+        local_state = StateManager(processed_dir / "state.json")
+        if local_state.uploaded_save_hash() is not None:
+            try:
+                remote_hash = AssetManager.remote_save_hash(self._config, game)
+                if remote_hash and remote_hash != local_state.uploaded_save_hash():
+                    reply = QMessageBox.warning(
+                        self,
+                        "Remote changes detected",
+                        "Someone has uploaded changes since your last sync.\n\n"
+                        "Uploading now may overwrite their work.\n"
+                        "Consider pulling first.",
+                        QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                        QMessageBox.StandardButton.Cancel,
+                    )
+                    if reply == QMessageBox.StandardButton.Cancel:
+                        return
+            except Exception:
+                pass  # network error → proceed
+
         manager = AssetManager(
             config=self._config,
             game=game,
@@ -392,6 +447,7 @@ class MainWindow(QMainWindow):
 
         self._upload_btn.setEnabled(False)
         self._update_btn.setEnabled(False)
+        self._pull_btn.setEnabled(False)
         label = "Updating..." if incremental else "Uploading..."
         self._set_status(label, "⟳", "#6ab0e0")
         self._log_line(f"{'Update' if incremental else 'Upload'} — {game.name}", "#89b4fa")
@@ -416,6 +472,7 @@ class MainWindow(QMainWindow):
 
         self._upload_btn.setEnabled(True)
         self._update_btn.setEnabled(True)
+        self._pull_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Helpers
