@@ -156,9 +156,17 @@ class AssetManager:
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(save_data, f, indent=2, ensure_ascii=False)
 
-        state.save()
-
         self._on_progress(ProgressEvent(EventKind.INFO, f"Save written: {output_path}"))
+
+        save_remote = f"saves/{self._game.github_subfolder}.json"
+        if state.changed(output_path):
+            save_url = uploader.upload(output_path, save_remote)
+            state.mark_file(output_path, save_remote)
+            self._on_progress(ProgressEvent(EventKind.INFO, f"Save synced → {save_url}", {"url": save_url}))
+        else:
+            self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {save_remote}"))
+
+        state.save()
 
         tts_dir = self._config.tts_saves_dir
         if tts_dir and tts_dir.is_dir():
