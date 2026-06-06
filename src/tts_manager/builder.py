@@ -1,10 +1,10 @@
+import hashlib
 import json
-import random
 from pathlib import Path
 
 
-def _guid() -> str:
-    return "".join(random.choices("0123456789abcdef", k=6))
+def _guid(seed: str) -> str:
+    return hashlib.md5(seed.encode()).hexdigest()[:6]
 
 
 def _base_transform() -> dict:
@@ -15,9 +15,9 @@ def _base_transform() -> dict:
     }
 
 
-def _base_object(name: str) -> dict:
+def _base_object(name: str, guid_seed: str) -> dict:
     return {
-        "GUID": _guid(),
+        "GUID": _guid(guid_seed),
         "Name": name,
         "Transform": _base_transform(),
         "Nickname": "",
@@ -46,7 +46,7 @@ def _base_object(name: str) -> dict:
 
 
 def build_token(name: str, image_url: str) -> dict:
-    obj = _base_object("Custom_Token")
+    obj = _base_object("Custom_Token", f"token:{name}")
     obj["Nickname"] = name
     obj["CustomImage"] = {
         "ImageURL": image_url,
@@ -64,7 +64,7 @@ def build_token(name: str, image_url: str) -> dict:
 
 
 def build_tile(name: str, front_url: str, back_url: str = "") -> dict:
-    obj = _base_object("Custom_Tile")
+    obj = _base_object("Custom_Tile", f"tile:{name}")
     obj["Nickname"] = name
     obj["CustomImage"] = {
         "ImageURL": front_url,
@@ -82,7 +82,7 @@ def build_tile(name: str, front_url: str, back_url: str = "") -> dict:
 
 
 def build_card(name: str, deck_key: int, front_url: str, back_url: str = "") -> dict:
-    obj = _base_object("CardCustom")
+    obj = _base_object("CardCustom", f"card:{name}")
     obj["Nickname"] = name
     obj["ColorDiffuse"] = {"r": 0.713235259, "g": 0.713235259, "b": 0.713235259}
     obj["HideWhenFaceDown"] = True
@@ -124,7 +124,7 @@ def build_deck(
     deck_ids = [deck_key * 100 + i for i in range(num_cards)]
     contained = []
     for i in range(num_cards):
-        card = _base_object("Card")
+        card = _base_object("Card", f"deck_card:{name}:{i}")
         card["ColorDiffuse"] = {"r": 0.713235259, "g": 0.713235259, "b": 0.713235259}
         card["HideWhenFaceDown"] = True
         card["Hands"] = True
@@ -133,7 +133,7 @@ def build_deck(
         card["CustomDeck"] = {str(deck_key): entry}
         contained.append(card)
 
-    obj = _base_object("Deck")
+    obj = _base_object("Deck", f"deck:{name}")
     obj["Nickname"] = name
     obj["ColorDiffuse"] = {"r": 0.713235259, "g": 0.713235259, "b": 0.713235259}
     obj["HideWhenFaceDown"] = True
