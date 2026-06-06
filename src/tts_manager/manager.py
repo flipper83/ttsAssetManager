@@ -82,6 +82,32 @@ class AssetManager:
 
         return output_path
 
+    def _merge_existing_transforms(self, new_save: dict) -> None:
+        """Copy Transform values from the existing TTS save into new_save by matching GUIDs.
+
+        Preserves object positions/rotations/scale that the user set inside TTS.
+        Only top-level ObjectStates are merged; contained deck cards are left at defaults.
+        """
+        tts_dir = self._config.tts_saves_dir
+        if not tts_dir:
+            return
+        existing_path = tts_dir / f"{self._game.name}.json"
+        if not existing_path.exists():
+            return
+        try:
+            with existing_path.open(encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            return
+        old_by_guid = {o["GUID"]: o for o in existing.get("ObjectStates", [])}
+        merged = 0
+        for obj in new_save.get("ObjectStates", []):
+            if obj["GUID"] in old_by_guid:
+                obj["Transform"] = old_by_guid[obj["GUID"]]["Transform"]
+                merged += 1
+        if merged:
+            self._on_progress(ProgressEvent(EventKind.INFO, f"Preserved layout for {merged} object(s) from existing save"))
+
     def delete_game(self, delete_remote: bool) -> None:
         """Remove local processed files and optionally all remote assets."""
         if delete_remote:
@@ -221,6 +247,8 @@ class AssetManager:
             deck_key += 1
 
         save_data = build_save(self._skeleton_path, tts_objects)
+        save_data["SaveName"] = self._game.name
+        self._merge_existing_transforms(save_data)
         output_path = self._output_dir / f"{self._game.name}.json"
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(save_data, f, indent=2, ensure_ascii=False)
