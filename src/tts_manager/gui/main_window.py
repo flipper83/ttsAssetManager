@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -76,6 +76,8 @@ QTextEdit { background: #181825; border: 1px solid #313244; border-radius: 4px; 
 QSplitter::handle { background: #313244; }
 QStatusBar { background: #181825; border-top: 1px solid #313244; color: #888; }
 QLabel#section_label { color: #7f849c; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; }
+QPushButton#refresh_btn { background: #313244; border: 1px solid #45475a; border-radius: 4px; color: #7f849c; font-size: 14px; padding: 2px 8px; }
+QPushButton#refresh_btn:hover { background: #45475a; color: #cdd6f4; }
 """
 
 
@@ -166,6 +168,11 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status)
         self._set_status("Select or create a game", "●")
 
+        self._auto_scan_timer = QTimer(self)
+        self._auto_scan_timer.setInterval(5000)
+        self._auto_scan_timer.timeout.connect(self._auto_scan)
+        self._auto_scan_timer.start()
+
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
@@ -199,9 +206,18 @@ class MainWindow(QMainWindow):
         layout.addLayout(game_btns)
 
         # Assets section
+        assets_row = QHBoxLayout()
         assets_lbl = QLabel("ASSETS")
         assets_lbl.setObjectName("section_label")
-        layout.addWidget(assets_lbl)
+        assets_row.addWidget(assets_lbl)
+        assets_row.addStretch()
+        self._refresh_btn = QPushButton("↺  Refresh")
+        self._refresh_btn.setObjectName("refresh_btn")
+        self._refresh_btn.setFixedHeight(20)
+        self._refresh_btn.setToolTip("Refresh asset status")
+        self._refresh_btn.clicked.connect(self._scan)
+        assets_row.addWidget(self._refresh_btn)
+        layout.addLayout(assets_row)
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
@@ -562,6 +578,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _auto_scan(self) -> None:
+        if self._selected_game and (self._worker is None or not self._worker.isRunning()):
+            self._scan()
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self._config, self._config_path, self)
