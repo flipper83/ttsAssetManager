@@ -127,14 +127,16 @@ def build_deck(
     num_width: int,
     num_height: int,
     num_cards: int,
+    unique_back: bool = False,
 ) -> dict:
+    """Build a TTS Deck. With unique_back, back_url is a sprite sheet matching the face grid."""
     entry = {
         "FaceURL": sheet_url,
         "BackURL": back_url,
         "NumWidth": num_width,
         "NumHeight": num_height,
         "BackIsHidden": False,
-        "UniqueBack": False,
+        "UniqueBack": unique_back,
         "Type": 0,
     }
     deck_ids = [deck_key * 100 + i for i in range(num_cards)]

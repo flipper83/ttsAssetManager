@@ -7,6 +7,7 @@ class DeckCard:
     deck_name: str
     card_name: str
     path: Path
+    back_path: Path | None = None
 
 
 @dataclass

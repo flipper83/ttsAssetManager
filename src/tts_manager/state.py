@@ -40,17 +40,31 @@ class StateManager:
     def deck_info(self, deck_name: str) -> dict | None:
         return self._data.get("decks", {}).get(deck_name)
 
-    def mark_deck(self, deck_name: str, card_paths: list[Path], remote: str, cols: int, rows: int) -> None:
+    def mark_deck(
+        self,
+        deck_name: str,
+        card_paths: list[Path],
+        remote: str,
+        cols: int,
+        rows: int,
+        back_paths: list[Path] | None = None,
+        back_remote: str | None = None,
+    ) -> None:
+        """Record a composed deck. back_paths/back_remote are set only for decks with unique backs."""
         for p in card_paths:
             self._data.setdefault("files", {})[str(p)] = {
                 "hash": self._hash(p),
                 "remote": remote,
             }
-        self._data.setdefault("decks", {})[deck_name] = {
-            "remote": remote,
-            "cols": cols,
-            "rows": rows,
-        }
+        for p in back_paths or []:
+            self._data.setdefault("files", {})[str(p)] = {
+                "hash": self._hash(p),
+                "remote": back_remote,
+            }
+        info = {"remote": remote, "cols": cols, "rows": rows}
+        if back_remote:
+            info["back_remote"] = back_remote
+        self._data.setdefault("decks", {})[deck_name] = info
 
     # ------------------------------------------------------------------
     # Persistence

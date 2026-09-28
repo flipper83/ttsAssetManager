@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .builder import build_card, build_deck, build_save, build_tile, build_token, merge_into_save
 from .classifier import classify_assets
-from .composer import compose_deck_sheet, sheet_dims
+from .composer import compose_deck_back_sheet, compose_deck_sheet, sheet_dims
 from .config import Config, GameConfig
 from .optimizer import optimize_image
 from .progress import EventKind, ProgressCallback, ProgressEvent, noop
@@ -163,8 +163,8 @@ class AssetManager:
 
         prefix = self._game.github_subfolder
 
-        def _upload(local: Path, folder: str) -> str:
-            if incremental and not state.changed(local):
+        def _upload(local: Path, folder: str, force: bool = False) -> str:
+            if incremental and not force and not state.changed(local):
                 remote = state.remote_path(local)
                 url = f"{self._config.base_url}/{remote}"
                 self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {url}", {"url": url}))
@@ -211,30 +211,64 @@ class AssetManager:
                 continue
 
             card_paths = [c.path for c in deck.cards]
-            deck_is_changed = not incremental or state.deck_changed(card_paths)
+            unique_back = any(c.back_path for c in deck.cards)
+            back_paths = [c.back_path for c in deck.cards if c.back_path]
+            if unique_back and deck.back_path:
+                back_paths.append(deck.back_path)
+
+            info = state.deck_info(name)
+            was_unique = bool(info and info.get("back_remote"))
+            mode_switched = info is not None and unique_back != was_unique
+            deck_is_changed = (
+                not incremental
+                or info is None
+                or mode_switched
+                or state.deck_changed(card_paths + back_paths)
+            )
 
             self._on_progress(ProgressEvent(
                 EventKind.INFO,
                 f"Deck '{name}' ({len(deck.cards)} cards){'...' if deck_is_changed else ' (unchanged)'}",
             ))
 
+            back_url = ""
             if deck_is_changed:
                 sheet_path, cols, rows = compose_deck_sheet(deck, self._processed_dir, self._on_progress)
-                old_remote = state.deck_info(name) and state.deck_info(name).get("remote")  # type: ignore[union-attr]
+                old_remote = info and info.get("remote")
                 versioned = StateManager.versioned_name(sheet_path)
                 remote = f"{prefix}/decks/{versioned}"
                 sheet_url = uploader.upload(sheet_path, remote)
                 if old_remote and old_remote != remote:
                     uploader.delete(old_remote)
-                state.mark_deck(name, card_paths, remote, cols, rows)
-            else:
-                info = state.deck_info(name)
-                sheet_url = f"{self._config.base_url}/{info['remote']}"
-                cols, rows = info["cols"], info["rows"]
-                self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {sheet_url}", {"url": sheet_url}))
 
-            back_url = _upload(deck.back_path, "decks") if deck.back_path else ""
-            tts_objects.append(build_deck(name, deck_key, sheet_url, back_url, cols, rows, len(deck.cards)))
+                back_remote = None
+                if unique_back:
+                    # The shared back (if any) is baked into the back sheet; drop its standalone copy.
+                    old_back_remote = info and info.get("back_remote")
+                    if not old_back_remote and deck.back_path:
+                        old_back_remote = state.remote_path(deck.back_path)
+                    back_sheet_path = compose_deck_back_sheet(deck, self._processed_dir, self._on_progress)
+                    back_remote = f"{prefix}/decks/{StateManager.versioned_name(back_sheet_path)}"
+                    back_url = uploader.upload(back_sheet_path, back_remote)
+                    if old_back_remote and old_back_remote != back_remote:
+                        uploader.delete(old_back_remote)
+                elif was_unique and not deck.back_path:
+                    # With a shared back, the forced re-upload below replaces (and deletes) the back sheet.
+                    uploader.delete(info["back_remote"])  # type: ignore[index]
+                state.mark_deck(name, card_paths, remote, cols, rows, back_paths, back_remote)
+            else:
+                sheet_url = f"{self._config.base_url}/{info['remote']}"  # type: ignore[index]
+                cols, rows = info["cols"], info["rows"]  # type: ignore[index]
+                self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {sheet_url}", {"url": sheet_url}))
+                if unique_back:
+                    back_url = f"{self._config.base_url}/{info['back_remote']}"  # type: ignore[index]
+
+            if not unique_back and deck.back_path:
+                # After leaving unique-back mode the shared back's state points at the deleted back sheet.
+                back_url = _upload(deck.back_path, "decks", force=mode_switched)
+            tts_objects.append(build_deck(
+                name, deck_key, sheet_url, back_url, cols, rows, len(deck.cards), unique_back=unique_back,
+            ))
             deck_key += 1
 
         existing_save = self._existing_save()

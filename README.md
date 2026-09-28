@@ -18,11 +18,17 @@ Prepare [Tabletop Simulator](https://www.tabletopsimulator.com/) save files from
 |------|------|
 | `d_<deck>_<card>.png` | Card in a deck |
 | `d_<deck>_back.png` | Back image for a deck |
+| `db_<deck>_<card>.png` | Unique back for card `d_<deck>_<card>.png` |
 | `c_<name>_a.png` / `c_<name>_b.png` | Standalone card (front / back) |
 | `t_<name>_a.png` / `t_<name>_b.png` | Tile (front / back) |
 | `to_<name>.png` | Token |
 
 Cards within a deck are sorted alphabetically and composed into a sprite sheet automatically.
+
+By default every card in a deck shares the `d_<deck>_back.png` image. If any card has its own
+`db_<deck>_<card>.png`, the deck switches to unique backs: a second sprite sheet of backs is
+composed with the same grid. Cards without their own back use `d_<deck>_back.png` (or are left
+blank if the deck has no shared back).
 
 ## Setup
 
