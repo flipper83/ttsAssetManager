@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .builder import build_card, build_deck, build_save, build_tile, build_token
+from .builder import build_card, build_deck, build_save, build_tile, build_token, merge_into_save
 from .classifier import classify_assets
 from .composer import compose_deck_sheet, sheet_dims
 from .config import Config, GameConfig
@@ -83,31 +83,19 @@ class AssetManager:
 
         return output_path
 
-    def _merge_existing_transforms(self, new_save: dict) -> None:
-        """Copy Transform values from the existing TTS save into new_save by matching GUIDs.
-
-        Preserves object positions/rotations/scale that the user set inside TTS.
-        Only top-level ObjectStates are merged; contained deck cards are left at defaults.
-        """
+    def _existing_save(self) -> dict | None:
+        """Load the current TTS save for this game, if one exists on disk."""
         tts_dir = self._config.tts_saves_dir
         if not tts_dir:
-            return
+            return None
         existing_path = tts_dir / f"{self._game.name}.json"
         if not existing_path.exists():
-            return
+            return None
         try:
             with existing_path.open(encoding="utf-8") as f:
-                existing = json.load(f)
+                return json.load(f)
         except Exception:
-            return
-        old_by_guid = {o["GUID"]: o for o in existing.get("ObjectStates", [])}
-        merged = 0
-        for obj in new_save.get("ObjectStates", []):
-            if obj["GUID"] in old_by_guid:
-                obj["Transform"] = old_by_guid[obj["GUID"]]["Transform"]
-                merged += 1
-        if merged:
-            self._on_progress(ProgressEvent(EventKind.INFO, f"Preserved layout for {merged} object(s) from existing save"))
+            return None
 
     def delete_game(self, delete_remote: bool) -> None:
         """Remove local processed files and optionally all remote assets."""
@@ -249,9 +237,16 @@ class AssetManager:
             tts_objects.append(build_deck(name, deck_key, sheet_url, back_url, cols, rows, len(deck.cards)))
             deck_key += 1
 
-        save_data = build_save(self._skeleton_path, tts_objects)
+        existing_save = self._existing_save()
+        if existing_save is not None:
+            save_data = merge_into_save(existing_save, tts_objects)
+            self._on_progress(ProgressEvent(
+                EventKind.INFO,
+                "Merged into existing save — hand-placed objects and layout preserved",
+            ))
+        else:
+            save_data = build_save(self._skeleton_path, tts_objects)
         save_data["SaveName"] = self._game.name
-        self._merge_existing_transforms(save_data)
         output_path = self._output_dir / f"{self._game.name}.json"
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(save_data, f, indent=2, ensure_ascii=False)
