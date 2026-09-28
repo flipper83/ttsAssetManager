@@ -1,7 +1,14 @@
 import json
 from pathlib import Path
 
-from tts_manager.builder import build_card, build_deck, build_save, build_tile, build_token
+from tts_manager.builder import (
+    build_card,
+    build_deck,
+    build_save,
+    build_tile,
+    build_token,
+    merge_into_save,
+)
 
 
 def test_build_token() -> None:
@@ -77,3 +84,61 @@ def test_build_save_all_objects_at_center(tmp_path: Path) -> None:
     t = save["ObjectStates"][0]["Transform"]
     assert t["posX"] == 0.0
     assert t["posZ"] == 0.0
+
+
+def test_merge_into_save_preserves_hand_placed_objects() -> None:
+    base = {
+        "SaveName": "test",
+        "ObjectStates": [
+            {"Name": "Custom_Model", "GUID": "board1", "Transform": {"posX": 5.0}},
+            {"Name": "Infinite_Bag", "GUID": "bag1", "Transform": {"posX": -3.0}},
+        ],
+    }
+    new_obj = build_token("gem", "https://example.com/gem.png")
+    save = merge_into_save(base, [new_obj])
+
+    guids = {o["GUID"] for o in save["ObjectStates"]}
+    assert "board1" in guids
+    assert "bag1" in guids
+    assert new_obj["GUID"] in guids
+    assert len(save["ObjectStates"]) == 3
+
+
+def test_merge_into_save_keeps_old_transform_on_replace() -> None:
+    new_obj = build_token("gem", "https://example.com/gem-v2.png")
+    base = {
+        "ObjectStates": [
+            {
+                "Name": "Custom_Token",
+                "GUID": new_obj["GUID"],
+                "Transform": {"posX": 7.5, "posY": 2.0, "posZ": -1.0, "scaleX": 2.0},
+                "CustomImage": {"ImageURL": "https://example.com/gem-v1.png"},
+            },
+        ],
+    }
+    save = merge_into_save(base, [new_obj])
+
+    assert len(save["ObjectStates"]) == 1
+    merged = save["ObjectStates"][0]
+    assert merged["CustomImage"]["ImageURL"] == "https://example.com/gem-v2.png"
+    assert merged["Transform"] == {"posX": 7.5, "posY": 2.0, "posZ": -1.0, "scaleX": 2.0}
+
+
+def test_merge_into_save_appends_new_managed_objects() -> None:
+    base = {"ObjectStates": [{"Name": "Custom_Model", "GUID": "board1", "Transform": {}}]}
+    new_obj = build_token("gem", "https://example.com/gem.png")
+    save = merge_into_save(base, [new_obj])
+
+    assert len(save["ObjectStates"]) == 2
+    assert save["ObjectStates"][-1]["GUID"] == new_obj["GUID"]
+
+
+def test_merge_into_save_spreads_new_objects_so_they_dont_stack() -> None:
+    base = {"ObjectStates": []}
+    new_decks = [
+        build_deck(f"deck{i}", i, f"https://example.com/{i}.png", "", 1, 1, 1) for i in range(1, 4)
+    ]
+    save = merge_into_save(base, new_decks)
+
+    positions = [(o["Transform"]["posX"], o["Transform"]["posZ"]) for o in save["ObjectStates"]]
+    assert len(set(positions)) == len(positions)

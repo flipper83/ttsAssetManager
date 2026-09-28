@@ -15,6 +15,22 @@ def _base_transform() -> dict:
     }
 
 
+NEW_OBJECT_SPACING = 3.0
+NEW_OBJECT_GRID_COLS = 5
+
+
+def _grid_transform(index: int) -> dict:
+    """Transform for the index-th freshly-appended object, laid out in a grid.
+
+    Keeps newly added decks/tokens/tiles from spawning stacked on top of each
+    other at the table center.
+    """
+    t = _base_transform()
+    t["posX"] = (index % NEW_OBJECT_GRID_COLS) * NEW_OBJECT_SPACING
+    t["posZ"] = (index // NEW_OBJECT_GRID_COLS) * NEW_OBJECT_SPACING
+    return t
+
+
 def _base_object(name: str, guid_seed: str) -> dict:
     return {
         "GUID": _guid(guid_seed),
@@ -150,4 +166,33 @@ def build_save(skeleton_path: Path, objects: list[dict]) -> dict:
         save = json.load(f)
     hand_triggers = [o for o in save.get("ObjectStates", []) if o.get("Name") == "HandTrigger"]
     save["ObjectStates"] = hand_triggers + objects
+    return save
+
+
+def merge_into_save(base_save: dict, objects: list[dict]) -> dict:
+    """Merge freshly-built managed objects into an existing save.
+
+    Every object already in base_save is preserved untouched — including anything
+    placed by hand in TTS (boards, tokens, dice, bags...) — except objects whose
+    GUID matches one of the new managed objects (same deck/card/tile/token name
+    always yields the same deterministic GUID), which are replaced in place while
+    keeping their original Transform so position/rotation/scale don't move. New
+    managed objects with no existing match are appended, spread out on a grid
+    (see _grid_transform) so they don't spawn stacked on top of each other.
+    """
+    new_by_guid = {o["GUID"]: o for o in objects}
+    merged = []
+    for obj in base_save.get("ObjectStates", []):
+        replacement = new_by_guid.pop(obj.get("GUID"), None)
+        if replacement is not None:
+            replacement["Transform"] = obj["Transform"]
+            merged.append(replacement)
+        else:
+            merged.append(obj)
+    for i, obj in enumerate(new_by_guid.values()):
+        obj["Transform"] = _grid_transform(i)
+        merged.append(obj)
+
+    save = dict(base_save)
+    save["ObjectStates"] = merged
     return save
