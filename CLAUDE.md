@@ -21,9 +21,17 @@ src/tts_manager/
 ├── builder.py     # TTS JSON object construction (pure logic)
 ├── state.py       # StateManager — upload hash tracking
 ├── uploader.py    # GitHubUploader — GitHub API via Git Data API
-├── config.py      # Config dataclass + validation
+├── config.py      # Config dataclass + validation (multi-game)
 ├── manager.py     # AssetManager — orchestrates everything (public API)
-└── cli.py         # Thin CLI wrapper around AssetManager
+├── cli.py         # Thin CLI wrapper around AssetManager
+└── gui/           # PyQt6 desktop app (thin UI wrapper around AssetManager)
+    ├── app.py                 # Entry point — loads Config, opens MainWindow
+    ├── main_window.py         # Main window: game list, asset tree, log, actions
+    ├── worker.py              # AssetWorker — runs AssetManager calls off the UI thread
+    ├── new_game_dialog.py     # Create a new game (name, assets folder)
+    ├── join_game_dialog.py    # Join an existing game from a shared save URL
+    ├── delete_game_dialog.py  # Remove a game (optionally delete remote assets)
+    └── settings_dialog.py     # GitHub credentials + TTS saves folder
 ```
 
 **Key design rule**: `manager.py` is the single public API. CLI and GUI both consume `AssetManager`
@@ -31,15 +39,26 @@ and nothing else. Library modules never call `print()` — all output goes throu
 
 ## CLI vs GUI
 
-The project is designed to support both a CLI and a graphical UI.
+The project ships both a CLI and a graphical UI; both are thin wrappers around `AssetManager`.
 
-- **CLI** (`cli.py`): calls `AssetManager`, prints `ProgressEvent` messages.
-- **GUI** (future): creates `AssetManager` with a callback that updates UI widgets.
-  Run `AssetManager.upload()` / `AssetManager.update()` in a background thread; GUI thread
-  receives progress via the callback.
+- **CLI** (`cli.py`): calls `AssetManager`, prints `ProgressEvent` messages. One game per run
+  (`--game`, defaults to the first game in config).
+- **GUI** (`gui/`, PyQt6): the primary day-to-day tool. `MainWindow` lists games from
+  `config.json`, scans the selected game's assets folder every 5s, and shows sync status
+  (new / modified / up to date) in a tree. `AssetWorker` runs `AssetManager.upload()` /
+  `.update()` / `.pull()` / `.delete_game()` on a background `QThread`; progress reaches the UI
+  via Qt signals fed by the `ProgressCallback`.
+  - Launch: `tts-manager-gui` (or `python -m tts_manager.gui.app`) — requires the `gui` extra
+    (`pip install -e ".[gui]"`).
+  - Supports multiple games at once (see Config below): **New Game**, **Join Game** (from a
+    shared save URL), **Delete Game**.
+  - **Upload All** / **Update** / **Pull** buttons drive the same operations as the CLI.
+  - Warns before upload if the remote save hash has changed since the last local sync
+    (someone else pushed in the meantime).
 
 Never add `print()` to library code (`models`, `classifier`, `composer`, `builder`, `state`,
-`uploader`, `manager`). Always emit a `ProgressEvent` instead.
+`uploader`, `manager`). Always emit a `ProgressEvent` instead — this is what lets the GUI show
+live progress without any library code knowing about Qt.
 
 ## Asset naming conventions
 
@@ -108,7 +127,11 @@ ruff format src tests
 
 ## Config
 
-`config.json` (gitignored):
+`config.json` (gitignored) holds global GitHub credentials plus a list of games. Each `GameConfig`
+can override `github_owner` / `github_repo` / `github_branch` individually (e.g. to keep one
+game's assets in a different repo); unset fields fall back to the globals via
+`GameConfig.resolved_config()`.
+
 ```json
 {
   "github_token": "...",
@@ -116,6 +139,15 @@ ruff format src tests
   "github_repo": "tts-assets",
   "github_branch": "gh-pages",
   "tts_saves_path": "~/Library/Tabletop Simulator/Saves",
-  "save_name": "MyGame"
+  "games": [
+    {
+      "name": "My Game",
+      "assets_folder": "~/tts-assets/my-game",
+      "github_subfolder": "my-game"
+    }
+  ]
 }
 ```
+
+`github_subfolder` is auto-derived from `name` (slugified) if omitted. The GUI's **New Game** /
+**Join Game** dialogs write to this `games` list; the CLI's `--game` flag selects one by name.

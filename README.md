@@ -82,7 +82,7 @@ The asset tree shows the sync status of each asset at a glance:
 
 1. **Person A** creates the game, uploads assets, and shares the save URL  
    (shown in the log after upload, e.g. `https://owner.github.io/repo/saves/my-game.json`)
-2. **Person B** *(Join — coming soon)* will be able to join via that URL and pull the latest save
+2. **Person B** clicks **↓ Join Game**, pastes that URL, and pulls the latest save
 3. Before uploading, the app warns if someone else has pushed changes since your last sync
 
 ## How updates work
