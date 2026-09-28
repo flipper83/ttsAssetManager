@@ -18,6 +18,7 @@ src/tts_manager/
 ├── models.py      # Domain dataclasses — no logic, no I/O
 ├── classifier.py  # Filename → model mapping (pure logic)
 ├── composer.py    # Deck sprite sheet composition (Pillow)
+├── optimizer.py   # Image resize/compression before upload (Pillow)
 ├── builder.py     # TTS JSON object construction (pure logic)
 ├── state.py       # StateManager — upload hash tracking
 ├── uploader.py    # GitHubUploader — GitHub API via Git Data API
@@ -56,9 +57,9 @@ The project ships both a CLI and a graphical UI; both are thin wrappers around `
   - Warns before upload if the remote save hash has changed since the last local sync
     (someone else pushed in the meantime).
 
-Never add `print()` to library code (`models`, `classifier`, `composer`, `builder`, `state`,
-`uploader`, `manager`). Always emit a `ProgressEvent` instead — this is what lets the GUI show
-live progress without any library code knowing about Qt.
+Never add `print()` to library code (`models`, `classifier`, `composer`, `optimizer`, `builder`,
+`state`, `uploader`, `manager`). Always emit a `ProgressEvent` instead — this is what lets the GUI
+show live progress without any library code knowing about Qt.
 
 ## Asset naming conventions
 
