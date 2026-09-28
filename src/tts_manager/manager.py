@@ -8,6 +8,7 @@ from .builder import build_card, build_deck, build_save, build_tile, build_token
 from .classifier import classify_assets
 from .composer import compose_deck_sheet, sheet_dims
 from .config import Config, GameConfig
+from .optimizer import optimize_image
 from .progress import EventKind, ProgressCallback, ProgressEvent, noop
 from .state import StateManager
 from .uploader import GitHubUploader
@@ -181,9 +182,11 @@ class AssetManager:
                 self._on_progress(ProgressEvent(EventKind.SKIP, f"(unchanged) {url}", {"url": url}))
                 return url
             old_remote = state.remote_path(local)
-            versioned = StateManager.versioned_name(local)
+            dest = self._processed_dir / local.name
+            optimized = optimize_image(local, dest, on_progress=self._on_progress)
+            versioned = StateManager.versioned_name(optimized)
             remote = f"{prefix}/{folder}/{versioned}"
-            url = uploader.upload(local, remote)
+            url = uploader.upload(optimized, remote)
             if old_remote and old_remote != remote:
                 uploader.delete(old_remote)
             state.mark_file(local, remote)

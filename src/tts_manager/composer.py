@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 
 from .models import DeckAsset
+from .optimizer import MAX_SHEET_DIMENSION, resize_to_fit
 from .progress import EventKind, ProgressCallback, ProgressEvent, noop
 
 
@@ -43,8 +44,10 @@ def compose_deck_sheet(
         sheet.paste(img, (i % num_cols * card_w, i // num_cols * card_h))
         img.close()
 
+    sheet = resize_to_fit(sheet, MAX_SHEET_DIMENSION)
+
     sheet_path = output_dir / f"deck_{deck.name}_sheet.png"
-    sheet.save(sheet_path, "PNG")
+    sheet.save(sheet_path, "PNG", optimize=True)
     sheet.close()
 
     on_progress(ProgressEvent(EventKind.COMPOSE, f"Composed {n}-card sheet: {sheet_path.name}"))

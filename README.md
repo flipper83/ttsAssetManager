@@ -6,10 +6,11 @@ Prepare [Tabletop Simulator](https://www.tabletopsimulator.com/) save files from
 
 1. Reads images from a local folder and classifies them by filename convention
 2. Composes deck sprite sheets automatically
-3. Uploads assets to GitHub Pages (content-addressed, cache-safe)
-4. Generates a `.json` save file ready to load in TTS
-5. Copies the save directly to your TTS saves folder
-6. Syncs the save to GitHub so teammates can pull the latest version
+3. Resizes oversized images and re-compresses them losslessly before upload
+4. Uploads assets to GitHub Pages (content-addressed, cache-safe)
+5. Generates a `.json` save file ready to load in TTS
+6. Copies the save directly to your TTS saves folder
+7. Syncs the save to GitHub so teammates can pull the latest version
 
 ## Asset naming conventions
 
@@ -88,6 +89,8 @@ The asset tree shows the sync status of each asset at a glance:
 ## How updates work
 
 Each uploaded asset gets a short content hash in its filename (`token_abc12345.png`). When a file changes, the hash changes and TTS downloads the new version automatically — no stale cache issues. Old versions are deleted from GitHub.
+
+Before upload, individual images are downscaled if their longest side exceeds 2048px, and deck sprite sheets if theirs exceeds 4096px; all images are then re-saved with lossless PNG/JPEG/WebP optimization. This keeps upload sizes down without visibly affecting quality. Your local source files are never modified.
 
 ## Development
 
