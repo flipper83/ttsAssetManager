@@ -67,6 +67,7 @@ show live progress without any library code knowing about Qt.
 |--------|---------|---------|
 | `d_<deck>_<card>` | `d_spells_fireball.png` | Card in deck "spells" |
 | `d_<deck>_back` | `d_spells_back.png` | Back image for deck "spells" |
+| `db_<deck>_<card>` | `db_spells_fireball.png` | Unique back for card "fireball" in deck "spells" |
 | `c_<name>_a` | `c_hero_a.png` | Standalone card front |
 | `c_<name>_b` | `c_hero_b.png` | Standalone card back |
 | `t_<name>_a` | `t_forest_a.png` | Tile front |
@@ -81,6 +82,8 @@ top-to-bottom, max 10 columns.
 - `CardID = deck_key * 100 + card_index` (0-based index in the sheet)
 - Each asset type that needs a `CustomDeck` entry gets a unique `deck_key` (auto-incremented)
 - Deck sprite sheets use the Git Data API (no size limit)
+- Decks with any `db_` back use `UniqueBack: true`: `BackURL` points to a back sprite sheet with
+  the same grid as the faces (cards without their own back fall back to `d_<deck>_back`)
 - Versioned filenames (`name_<sha8>.ext`) bust TTS's local image cache on update
 
 ## Running

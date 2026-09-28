@@ -14,11 +14,13 @@ def classify_assets(
 
     Naming conventions:
       d_<deck>_<card>  — deck card (back if card == "back")
+      db_<deck>_<card> — unique back for deck card d_<deck>_<card>
       c_<name>_a/b    — standalone card front/back
       t_<name>_a/b    — tile front/back
       to_<name>        — token (front only)
     """
     collection = AssetCollection()
+    deck_backs: list[tuple[list[str], Path]] = []
 
     files = sorted(
         p for p in input_dir.iterdir()
@@ -37,6 +39,8 @@ def classify_assets(
 
         if prefix == "to":
             _parse_token(parts, path, collection, on_progress)
+        elif prefix == "db":
+            deck_backs.append((parts, path))
         elif prefix == "d":
             _parse_deck_card(parts, path, collection, on_progress)
         elif prefix == "c":
@@ -45,6 +49,9 @@ def classify_assets(
             _parse_tile(parts, path, collection, on_progress)
         else:
             on_progress(ProgressEvent(EventKind.WARNING, f"Skipping unknown prefix '{prefix}': {path.name}"))
+
+    for parts, path in deck_backs:
+        _parse_deck_card_back(parts, path, collection, on_progress)
 
     for deck in collection.decks.values():
         deck.cards.sort(key=lambda c: c.card_name)
@@ -69,6 +76,23 @@ def _parse_deck_card(parts: list[str], path: Path, col: AssetCollection, cb: Pro
         col.decks[deck_name].back_path = path
     else:
         col.decks[deck_name].cards.append(DeckCard(deck_name=deck_name, card_name=card_name, path=path))
+
+
+def _parse_deck_card_back(parts: list[str], path: Path, col: AssetCollection, cb: ProgressCallback) -> None:
+    if len(parts) < 3:
+        cb(ProgressEvent(EventKind.WARNING, f"Malformed deck card back filename: {path.name}"))
+        return
+    deck_name = parts[1]
+    card_name = "_".join(parts[2:])
+    deck = col.decks.get(deck_name)
+    card = next((c for c in deck.cards if c.card_name == card_name), None) if deck else None
+    if card is None:
+        cb(ProgressEvent(
+            EventKind.WARNING,
+            f"Back without matching deck card d_{deck_name}_{card_name}: {path.name}",
+        ))
+        return
+    card.back_path = path
 
 
 def _parse_card(parts: list[str], path: Path, col: AssetCollection, cb: ProgressCallback) -> None:

@@ -89,3 +89,28 @@ def test_deck_state_roundtrip(tmp_path: Path) -> None:
     state.mark_deck("spells", cards, "decks/sheet_abc.png", cols=3, rows=1)
     assert state.deck_info("spells") == {"remote": "decks/sheet_abc.png", "cols": 3, "rows": 1}
     assert state.deck_changed(cards) is False
+
+
+def test_deck_state_records_unique_back_sheet(tmp_path: Path) -> None:
+    front = tmp_path / "d_heroes_knight.png"
+    front.write_bytes(b"front")
+    back = tmp_path / "db_heroes_knight.png"
+    back.write_bytes(b"back")
+
+    state = StateManager(tmp_path / "state.json")
+    state.mark_deck("heroes", [front], "g/decks/sheet.png", 1, 1, [back], "g/decks/back_sheet.png")
+
+    assert state.deck_info("heroes")["back_remote"] == "g/decks/back_sheet.png"
+    assert state.remote_path(back) == "g/decks/back_sheet.png"
+    assert state.deck_changed([front, back]) is False
+    back.write_bytes(b"new back")
+    assert state.deck_changed([front, back]) is True
+
+
+def test_deck_state_without_unique_back_has_no_back_remote(tmp_path: Path) -> None:
+    front = tmp_path / "d_spells_fireball.png"
+    front.write_bytes(b"front")
+
+    state = StateManager(tmp_path / "state.json")
+    state.mark_deck("spells", [front], "g/decks/sheet.png", 1, 1)
+    assert "back_remote" not in state.deck_info("spells")

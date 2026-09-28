@@ -53,6 +53,20 @@ def test_build_deck_structure() -> None:
     assert obj["CustomDeck"]["1"]["NumHeight"] == 1
 
 
+def test_build_deck_shared_back_by_default() -> None:
+    obj = build_deck("spells", 1, "https://example.com/sheet.png", "https://example.com/back.png", 2, 1, 2)
+    assert obj["CustomDeck"]["1"]["UniqueBack"] is False
+
+
+def test_build_deck_unique_back() -> None:
+    obj = build_deck("heroes", 2, "https://example.com/sheet.png", "https://example.com/back_sheet.png",
+                     2, 1, 2, unique_back=True)
+    entry = obj["CustomDeck"]["2"]
+    assert entry["UniqueBack"] is True
+    assert entry["BackURL"] == "https://example.com/back_sheet.png"
+    assert all(c["CustomDeck"]["2"]["UniqueBack"] is True for c in obj["ContainedObjects"])
+
+
 def test_build_save_preserves_hand_triggers(tmp_path: Path) -> None:
     skeleton = {
         "SaveName": "test",

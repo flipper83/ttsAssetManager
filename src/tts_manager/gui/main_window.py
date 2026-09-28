@@ -393,7 +393,8 @@ class MainWindow(QMainWindow):
 
     def _asset_paths(self, asset) -> list:
         if isinstance(asset, DeckAsset):
-            return [c.path for c in asset.cards] + ([asset.back_path] if asset.back_path else [])
+            card_backs = [c.back_path for c in asset.cards if c.back_path]
+            return [c.path for c in asset.cards] + card_backs + ([asset.back_path] if asset.back_path else [])
         if isinstance(asset, (CardAsset, TileAsset)):
             return [asset.front_path] + ([asset.back_path] if asset.back_path else [])
         if isinstance(asset, TokenAsset):
@@ -419,7 +420,8 @@ class MainWindow(QMainWindow):
         state = self._load_state(game)
 
         categories = [
-            ("Decks",  collection.decks,  lambda d: [c.card_name for c in d.cards]),
+            ("Decks",  collection.decks,  lambda d: [c.card_name + (" + back" if c.back_path else "")
+                                                      for c in d.cards]),
             ("Cards",  collection.cards,  lambda c: ["front" + (" + back" if c.back_path else "")]),
             ("Tiles",  collection.tiles,  lambda t: ["front" + (" + back" if t.back_path else "")]),
             ("Tokens", collection.tokens, lambda t: [t.front_path.name]),
